@@ -1,0 +1,8 @@
+[
+  {"id": "S1", "customer_id": "C001", "plan": "Monthly Discovery Box", "price": 29.00, "status": "active",
+   "last_renewal_status": "ok", "last_renewal_at": "2026-10-01T00:00:00+00:00"},
+  {"id": "S2", "customer_id": "C002", "plan": "Monthly Espresso Club", "price": 39.00, "status": "active",
+   "last_renewal_status": "failed", "last_renewal_at": "2026-10-04T00:00:00+00:00"},
+  {"id": "S3", "customer_id": "C004", "plan": "Monthly Discovery Box", "price": 29.00, "status": "cancelled",
+   "last_renewal_status": "ok", "last_renewal_at": "2026-08-01T00:00:00+00:00"}
+]

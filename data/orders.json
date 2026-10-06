@@ -1,0 +1,20 @@
+[
+  {"id": "O123", "customer_id": "C001", "items": ["Ethiopia Yirgacheffe 500g", "Paper filters x100"], "total": 34.00, "status": "shipped",
+   "created_at": "2026-10-05T10:00:00+00:00", "shipped_at": "2026-10-06T08:00:00+00:00", "delivered_at": null},
+  {"id": "O124", "customer_id": "C001", "items": ["Colombia Huila 250g"], "total": 28.00, "status": "shipped",
+   "created_at": "2026-10-02T09:00:00+00:00", "shipped_at": "2026-10-03T09:00:00+00:00", "delivered_at": null},
+  {"id": "O456", "customer_id": "C002", "items": ["Espresso Blend 1kg"], "total": 45.00, "status": "delivered",
+   "created_at": "2026-09-20T09:00:00+00:00", "shipped_at": "2026-09-21T09:00:00+00:00", "delivered_at": "2026-09-24T15:00:00+00:00"},
+  {"id": "O457", "customer_id": "C002", "items": ["Decaf Sampler 3x100g"], "total": 18.00, "status": "delivered",
+   "created_at": "2026-09-28T09:00:00+00:00", "shipped_at": "2026-09-29T09:00:00+00:00", "delivered_at": "2026-10-02T11:00:00+00:00"},
+  {"id": "O789", "customer_id": "C003", "items": ["Pour-over Starter Kit"], "total": 120.00, "status": "delivered",
+   "created_at": "2026-09-15T09:00:00+00:00", "shipped_at": "2026-09-16T09:00:00+00:00", "delivered_at": "2026-09-19T10:00:00+00:00"},
+  {"id": "O321", "customer_id": "C003", "items": ["Kenya AA 250g"], "total": 30.00, "status": "refunded",
+   "created_at": "2026-09-01T09:00:00+00:00", "shipped_at": "2026-09-02T09:00:00+00:00", "delivered_at": "2026-09-05T10:00:00+00:00"},
+  {"id": "O555", "customer_id": "C004", "items": ["Brewly Grinder Mini"], "total": 52.00, "status": "paid",
+   "created_at": "2026-09-28T02:00:00+00:00", "shipped_at": null, "delivered_at": null},
+  {"id": "O654", "customer_id": "C004", "items": ["Cold Brew Pack x6"], "total": 40.00, "status": "shipped",
+   "created_at": "2026-09-24T09:00:00+00:00", "shipped_at": "2026-09-25T09:00:00+00:00", "delivered_at": null},
+  {"id": "O658", "customer_id": "C004", "items": ["Guatemala Antigua 250g"], "total": 26.00, "status": "delivered",
+   "created_at": "2026-09-10T09:00:00+00:00", "shipped_at": "2026-09-11T09:00:00+00:00", "delivered_at": "2026-09-14T09:00:00+00:00"}
+]
