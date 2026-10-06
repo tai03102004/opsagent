@@ -8,7 +8,6 @@ FallbackClassifier wraps the two so an LLM failure never breaks a request.
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import Optional, Protocol
 
@@ -16,9 +15,8 @@ from pydantic import BaseModel
 
 from .config import has_llm_credentials, llm_mode, model_name
 from .models import Extraction, Intent
+from .resilience import CircuitFallback
 from .validate import detect_injection, normalise
-
-log = logging.getLogger(__name__)
 
 ORDER_ID_RE = re.compile(r"\b(O\d{3,})\b", re.IGNORECASE)
 AMOUNT_RE = re.compile(
@@ -158,15 +156,15 @@ class FallbackClassifier:
 
     def __init__(self, primary: Classifier, fallback: Classifier):
         self.primary, self.fallback = primary, fallback
+        self.circuit = CircuitFallback("classifier")
 
     def classify(self, message: str) -> Extraction:
-        try:
-            return self.primary.classify(message)
-        except Exception as exc:  # noqa: BLE001 - any LLM failure must degrade, not crash
-            log.warning("classifier fallback: %s: %s", type(exc).__name__, exc)
+        def degrade(reason: str) -> Extraction:
             result = self.fallback.classify(message)
-            result.fallback_reason = f"{type(exc).__name__}: {str(exc)[:200]}"
+            result.fallback_reason = reason
             return result
+
+        return self.circuit.call(lambda: self.primary.classify(message), degrade)
 
 
 def make_classifier(mode: Optional[str] = None) -> Classifier:

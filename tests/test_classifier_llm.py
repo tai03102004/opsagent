@@ -85,3 +85,24 @@ def test_live_claude_classifies_vietnamese():
     ex = make_classifier("claude").classify("Tôi bị trừ tiền 2 lần cho đơn hàng O123")
     assert ex.source == "claude"
     assert ex.intent == Intent.DUPLICATE_CHARGE and ex.order_id == "O123"
+
+
+class AuthenticationError(Exception):  # same class name as anthropic's
+    pass
+
+
+def test_permanent_error_opens_circuit():
+    client = fake_client(error=AuthenticationError("invalid x-api-key"))
+    clf = FallbackClassifier(ClaudeClassifier(client=client, model="m"), RuleClassifier())
+    clf.classify("refund O457")
+    clf.classify("refund O457")
+    assert len(client.messages.calls) == 1  # second request skipped Claude entirely
+    assert clf.classify("refund O457").fallback_reason.startswith("circuit open")
+
+
+def test_transient_error_keeps_retrying():
+    client = fake_client(error=TimeoutError("slow"))
+    clf = FallbackClassifier(ClaudeClassifier(client=client, model="m"), RuleClassifier())
+    clf.classify("refund O457")
+    clf.classify("refund O457")
+    assert len(client.messages.calls) == 2

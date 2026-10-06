@@ -8,15 +8,13 @@ customer's language) but falls back to templates on any failure.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any, Literal, Optional, Protocol
 
 from pydantic import BaseModel
 
 from .config import has_llm_credentials, llm_mode, model_name
 from .models import Tier
-
-log = logging.getLogger(__name__)
+from .resilience import CircuitFallback
 
 SIGNATURE = "\n\n- Brewly Support"
 FIELD_LABELS = {
@@ -185,13 +183,10 @@ class ClaudeDrafter:
 class FallbackDrafter:
     def __init__(self, primary: Drafter, fallback: Drafter):
         self.primary, self.fallback = primary, fallback
+        self.circuit = CircuitFallback("drafter")
 
     def draft(self, ctx: DraftContext) -> Draft:
-        try:
-            return self.primary.draft(ctx)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("drafter fallback: %s: %s", type(exc).__name__, exc)
-            return self.fallback.draft(ctx)
+        return self.circuit.call(lambda: self.primary.draft(ctx), lambda _reason: self.fallback.draft(ctx))
 
 
 def make_drafter(mode: Optional[str] = None) -> Drafter:
