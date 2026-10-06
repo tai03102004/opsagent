@@ -137,9 +137,13 @@ uv run opsagent serve              # http://localhost:8000/docs
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPSAGENT_MODEL=claude-opus-5-5   # default; claude-haiku-4-5 is ~10x cheaper for this task
+uv run opsagent check-llm               # one call: key, base URL, served model, structured output
 uv run opsagent eval --live             # same 20 scenarios through Claude, no fallback (~$0.5 on Opus)
 uv run pytest -m live
 ```
+
+An Anthropic-compatible gateway also works: set `ANTHROPIC_BASE_URL` and check it with `check-llm`
+first. Gateways differ in which models they offer and in whether they pass structured outputs through.
 
 `OPSAGENT_LLM=auto|claude|off` selects the mode. `auto` (the default) uses Claude when credentials exist
 and rules otherwise.

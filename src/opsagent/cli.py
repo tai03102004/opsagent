@@ -37,6 +37,36 @@ def _print_case(r: CaseResult, as_json: bool) -> None:
         print("  reply      :\n    " + r.customer_reply.replace("\n", "\n    "))
 
 
+def _check_llm() -> int:
+    """Diagnostics for a new key or gateway (e.g. ANTHROPIC_BASE_URL pointing at a proxy)."""
+    import os
+    import time
+
+    import anthropic
+
+    from .classifier import SYSTEM_PROMPT, _LLMExtraction
+    from .config import model_name
+
+    print(f"base_url : {os.getenv('ANTHROPIC_BASE_URL', 'https://api.anthropic.com (default)')}")
+    print(f"model    : {model_name()} (requested)")
+    started = time.time()
+    try:
+        r = anthropic.Anthropic(max_retries=0, timeout=60.0).messages.parse(
+            model=model_name(), max_tokens=4096, system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": "<customer_message>\nTôi bị trừ tiền 2 lần cho đơn hàng O123\n</customer_message>"}],
+            output_format=_LLMExtraction,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"FAILED   : {type(exc).__name__}: {str(exc)[:300]}")
+        return 1
+    print(f"served   : {r.model}  stop={r.stop_reason}  {time.time() - started:.1f}s  "
+          f"tokens in/out={r.usage.input_tokens}/{r.usage.output_tokens}")
+    print(f"parsed   : {r.parsed_output}")
+    ok = r.parsed_output is not None and r.parsed_output.intent.value == "duplicate_charge"
+    print("OK: structured output works" if ok else "WARNING: unexpected output")
+    return 0 if ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="opsagent", description="Brewly operations automation agent")
     p.add_argument("--llm", choices=["auto", "claude", "off"], help="override OPSAGENT_LLM")
@@ -65,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--port", type=int, default=8000)
 
     sub.add_parser("reset", help="clear the outbox (restore seed state)")
+    sub.add_parser("check-llm", help="one Claude call: is the key/base URL/model/structured output working?")
 
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.ERROR, format="%(levelname)s %(message)s")
@@ -75,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
         results = run_all(llm="claude" if args.live else "off")
         print(format_report(results))
         return 0 if all(r.passed for r in results) else 1
+
+    if args.cmd == "check-llm":
+        return _check_llm()
 
     if args.cmd == "serve":
         import os
