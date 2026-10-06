@@ -21,8 +21,8 @@ from .models import (
     Decision,
     Extraction,
     Finding,
-    Tier,
     SupportRequest,
+    Tier,
     Verification,
 )
 from .outbox import Outbox

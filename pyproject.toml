@@ -29,3 +29,10 @@ packages = ["src/opsagent"]
 testpaths = ["tests"]
 markers = ["live: calls the real Claude API (opt-in: pytest -m live)"]
 addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I"]
+ignore = ["E501"]
