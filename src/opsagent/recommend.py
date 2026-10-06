@@ -12,8 +12,8 @@ def _ticket(queue: str, priority: str, title: str, key: str, evidence: list[str]
     )
 
 
-def _slack(channel: str, text: str) -> Action:
-    return Action(type=ActionType.NOTIFY_SLACK, params={"channel": channel, "text": text})
+def _slack(channel: str, text: str, key: str) -> Action:
+    return Action(type=ActionType.NOTIFY_SLACK, params={"channel": channel, "text": text, "dedupe_key": key})
 
 
 def _refund(v: Verification, reason: str) -> Action:
@@ -33,7 +33,8 @@ def recommend_for_request(intent: Intent, v: Verification) -> list[Action]:
             return [
                 _refund(v, "duplicate charge"),
                 _ticket("billing", "high", f"Duplicate charge on {oid}", f"duplicate_charge:{oid}", v.evidence),
-                _slack("#billing", f"Duplicate charge on {oid} (${v.amount:.2f}) - auto-refund proposed"),
+                _slack("#billing", f"Duplicate charge on {oid} (${v.amount:.2f}) - auto-refund proposed",
+                       f"duplicate_charge:{oid}"),
             ]
         return [_ticket("billing", "medium", f"Investigate duplicate-charge claim on {oid}",
                         f"duplicate_claim:{oid}", v.evidence)]
@@ -50,7 +51,8 @@ def recommend_for_request(intent: Intent, v: Verification) -> list[Action]:
     if intent == Intent.SHIPPING_ISSUE and v.confirmed:
         return [
             _ticket("fulfillment", "medium", f"Delayed shipment {oid}", f"delayed_shipment:{oid}", v.evidence),
-            _slack("#fulfillment", f"Customer reports {oid} not delivered: {'; '.join(v.evidence)}"),
+            _slack("#fulfillment", f"Customer reports {oid} not delivered: {'; '.join(v.evidence)}",
+                   f"delayed_shipment:{oid}"),
         ]
 
     if intent == Intent.UNKNOWN:
@@ -66,15 +68,16 @@ def recommend_for_finding(f: Finding) -> list[Action]:
         return [
             _refund(v, "duplicate charge (detected by scan)"),
             _ticket("billing", "high", f"Duplicate charge on {ref}", f"duplicate_charge:{ref}", f.evidence),
-            _slack("#billing", f"Scan: duplicate charge on {ref} (${v.amount:.2f})"),
+            _slack("#billing", f"Scan: duplicate charge on {ref} (${v.amount:.2f})", f"duplicate_charge:{ref}"),
         ]
     if f.kind == "failed_renewal":
         return [
             _ticket("billing", "high", f"Subscription {ref} renewal failed", f"failed_renewal:{ref}", f.evidence),
-            _slack("#billing", f"Scan: renewal failed for {ref}; customer should update payment method"),
+            _slack("#billing", f"Scan: renewal failed for {ref}; customer should update payment method",
+               f"failed_renewal:{ref}"),
         ]
     queue_title = {"unshipped_order": "Paid but not shipped", "delayed_shipment": "Delayed shipment"}[f.kind]
     return [
         _ticket("fulfillment", "medium", f"{queue_title}: {ref}", f"{f.kind}:{ref}", f.evidence),
-        _slack("#fulfillment", f"Scan: {queue_title.lower()} {ref}"),
+        _slack("#fulfillment", f"Scan: {queue_title.lower()} {ref}", f"{f.kind}:{ref}"),
     ]

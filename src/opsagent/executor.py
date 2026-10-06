@@ -51,6 +51,11 @@ class Executor:
         return rec
 
     def _slack(self, p: dict, case_id: str) -> Record:
+        key = p.get("dedupe_key")
+        if key:
+            existing = next((m for m in self.outbox.read("slack") if m.get("dedupe_key") == key), None)
+            if existing:
+                return {"id": existing["id"], "status": "duplicate_ignored", "dedupe_key": key}
         rec = {"id": self.outbox.next_id("slack", "M"), "status": "done", "case_id": case_id, **p}
         self.outbox.append("slack", rec)
         return rec
