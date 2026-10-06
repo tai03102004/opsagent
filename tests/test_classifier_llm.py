@@ -17,11 +17,13 @@ class FakeMessages:
         self.parsed, self.stop_reason, self.error = parsed, stop_reason, error
         self.calls = []
 
-    def parse(self, **kwargs):
+    def create(self, **kwargs):
         self.calls.append(kwargs)
         if self.error:
             raise self.error
-        return SimpleNamespace(parsed_output=self.parsed, stop_reason=self.stop_reason)
+        text = self.parsed.model_dump_json() if self.parsed else ""
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)],
+                               stop_reason=self.stop_reason, model="m")
 
 
 def fake_client(**kw):

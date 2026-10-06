@@ -57,6 +57,7 @@ flowchart TD
 | `executor.py` | simulated side effects (refund, ticket, Slack, email, cancel), idempotent | no |
 | `approvals.py` | human-in-the-loop queue, persisted as events | no |
 | `drafter.py` | internal summary and customer reply (Claude or templates) | yes, optional |
+| `llm_json.py` | one structured Claude call; tolerant JSON parsing + schema validation | yes |
 | `pipeline.py` | wires the steps together and writes the audit trail | no |
 | `outbox.py` | append-only JSONL standing in for Zendesk, Slack, Stripe and email | no |
 
@@ -102,7 +103,7 @@ Requirements: [uv](https://docs.astral.sh/uv/). It installs Python 3.12 and the 
 
 ```bash
 uv sync
-uv run pytest                      # 121 tests, offline, no API key needed
+uv run pytest                      # 131 tests, offline, no API key needed
 uv run opsagent eval               # 20 end-to-end scenarios → pass/fail table
 ```
 
@@ -143,7 +144,10 @@ uv run pytest -m live
 ```
 
 An Anthropic-compatible gateway also works: set `ANTHROPIC_BASE_URL` and check it with `check-llm`
-first. Gateways differ in which models they offer and in whether they pass structured outputs through.
+first. Some gateways silently drop `output_config.format`; the model then answers with fenced JSON
+plus prose. `llm_json.structured_call` handles this: it always requests schema-enforced JSON, falls back
+to tolerant extraction when the endpoint didn't enforce it, and **still validates against the Pydantic
+schema** (anything invalid → rules/templates fallback). `check-llm` reports which case you are in.
 
 `OPSAGENT_LLM=auto|claude|off` selects the mode. `auto` (the default) uses Claude when credentials exist
 and rules otherwise.

@@ -76,7 +76,7 @@ def test_scan_runs_findings_through_policy(agent):
 class Boom:
     class messages:
         @staticmethod
-        def parse(**_):
+        def create(**_):
             raise RuntimeError("api down")
 
 
