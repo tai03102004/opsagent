@@ -77,6 +77,7 @@ class SupportRequest(BaseModel):
     # Optional on purpose: malformed input must produce NEED_INFO, not a crash.
     customer_email: Optional[str] = None
     message: Optional[str] = None
+    request_id: Optional[str] = None
 
 
 class Extraction(BaseModel):
@@ -141,6 +142,7 @@ class Finding(BaseModel):
 class CaseResult(BaseModel):
     case_id: str
     kind: Literal["request", "scan"]
+    replayed: bool = False  # true when returned from the idempotency index instead of being re-processed
     tier: Tier
     customer_id: Optional[str] = None
     input: dict[str, Any] = {}

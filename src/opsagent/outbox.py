@@ -7,9 +7,15 @@ from __future__ import annotations
 
 import json
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl  # POSIX (macOS, Linux)
+except ImportError:  # pragma: no cover - Windows: in-process locking only
+    fcntl = None
 
 STREAMS = ("tickets", "slack", "emails", "refunds", "subscriptions", "approvals", "audit")
 
@@ -40,6 +46,21 @@ class Outbox:
 
     def next_id(self, stream: str, prefix: str) -> str:
         return f"{prefix}-{len(self.read(stream)) + 1:04d}"
+
+    @contextmanager
+    def lock(self):
+        """Exclusive lock shared by every process and thread using this outbox directory.
+
+        Stand-in for a database transaction / row lock: read state, decide, write, all as one unit.
+        """
+        with open(self.dir / ".lock", "w") as handle:
+            if fcntl is not None:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
 
     def clear(self) -> None:
         for stream in STREAMS:

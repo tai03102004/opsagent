@@ -61,3 +61,19 @@ def test_scan_audit_reset(client):
     client.post("/reset")
     assert client.get("/audit").json() == []
     assert len(client.post("/scan").json()) == 4  # seed state restored
+
+
+def test_idempotency_key_header(client):
+    body = {"customer_email": "ben@example.com", "message": "Please refund $5 for order O457"}
+    first = client.post("/requests", json=body, headers={"Idempotency-Key": "k-1"}).json()
+    second = client.post("/requests", json=body, headers={"Idempotency-Key": "k-1"}).json()
+    assert not first["replayed"] and second["replayed"] and second["case_id"] == first["case_id"]
+    assert len(client.get("/outbox/refunds").json()) == 1
+
+
+def test_idempotency_key_reused_with_other_body_is_409(client):
+    client.post("/requests", json={"customer_email": "ben@example.com", "message": "Please refund $5 for order O457"},
+                headers={"Idempotency-Key": "k-1"})
+    r = client.post("/requests", json={"customer_email": "ben@example.com", "message": "Please refund $9 for order O457"},
+                    headers={"Idempotency-Key": "k-1"})
+    assert r.status_code == 409

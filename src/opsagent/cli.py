@@ -16,7 +16,8 @@ def _print_case(r: CaseResult, as_json: bool) -> None:
     if as_json:
         print(r.model_dump_json(indent=2))
         return
-    print(f"{TIER_ICON[r.tier.value]} {r.tier.value}  ({r.case_id}, {r.kind})")
+    replayed = "  [replayed: same request_id, nothing re-executed]" if r.replayed else ""
+    print(f"{TIER_ICON[r.tier.value]} {r.tier.value}  ({r.case_id}, {r.kind}){replayed}")
     if r.extraction:
         e = r.extraction
         flags = " ⚠️ injection suspected" if e.injection_suspected else ""
@@ -77,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     h = sub.add_parser("handle", help="process one customer request")
     h.add_argument("--email", required=True)
     h.add_argument("--message", required=True)
+    h.add_argument("--request-id", help="client idempotency key: resending the same id never re-processes")
     h.add_argument("--json", action="store_true")
 
     s = sub.add_parser("scan", help="scan operational data for issues")
@@ -129,22 +131,29 @@ def main(argv: list[str] | None = None) -> int:
         agent.outbox.clear()
         print("outbox cleared; seed state restored")
     elif args.cmd == "handle":
-        _print_case(agent.handle(SupportRequest(customer_email=args.email, message=args.message)), args.json)
+        from .pipeline import IdempotencyConflict
+
+        try:
+            result = agent.handle(SupportRequest(customer_email=args.email, message=args.message,
+                                                 request_id=args.request_id))
+        except IdempotencyConflict as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        _print_case(result, args.json)
     elif args.cmd == "scan":
         for r in agent.scan():
             _print_case(r, args.json)
             print()
     elif args.cmd == "approvals":
-        q = agent.approvals
         if args.action == "list":
-            for rec in q.list(None if args.all else "pending"):
+            for rec in agent.list_approvals(None if args.all else "pending"):
                 print(f"{rec.id} [{rec.status}] {rec.action.type.value} {json.dumps(rec.action.params)} "
                       f"case={rec.case_id} reasons={rec.reasons}")
         else:
             if not args.id:
                 p.error("approval id required")
             try:
-                fn = q.approve if args.action == "approve" else q.reject
+                fn = agent.approve if args.action == "approve" else agent.reject
                 rec = fn(args.id, reviewer=args.reviewer, note=args.note)
             except KeyError:
                 print(f"approval {args.id} not found", file=sys.stderr)

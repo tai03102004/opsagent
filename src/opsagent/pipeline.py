@@ -33,21 +33,78 @@ from .store import Store
 from .validate import REQUIRES_ORDER_ID, validate_request
 
 
+class IdempotencyConflict(ValueError):
+    pass
+
+
 def _case_id() -> str:
     return f"case-{uuid.uuid4().hex[:8]}"
 
 
+def _fingerprint(req: SupportRequest) -> tuple[str, str]:
+    return (req.customer_email or "").strip().lower(), " ".join((req.message or "").split())
+
+
 class Agent:
-    def __init__(self, store: Store, outbox: Outbox, classifier: Classifier, drafter: Drafter):
-        self.store = store
+    """Every operation runs under the outbox lock on freshly replayed state.
+
+    That makes "read balance -> decide -> write refund" atomic across threads AND processes
+    (CLI + API, or several API workers). A database would do this with a transaction.
+    """
+
+    def __init__(self, data_dir: Path, outbox: Outbox, classifier: Classifier, drafter: Drafter):
+        self.data_dir = data_dir
         self.outbox = outbox
         self.classifier = classifier
         self.drafter = drafter
-        self.executor = Executor(store, outbox)
-        self.approvals = ApprovalQueue(outbox, self.executor)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        self.store = Store.load(self.data_dir, reference_now())
+        replay(self.store, self.outbox)
+        self.executor = Executor(self.store, self.outbox)
+        self.approvals = ApprovalQueue(self.outbox, self.executor)
+        self._by_request_id = {
+            ev["input"]["request_id"]: ev
+            for ev in self.outbox.read("audit")
+            if ev.get("event") == "case" and (ev.get("input") or {}).get("request_id")
+        }
 
     # ------------------------------------------------------------------ requests
     def handle(self, req: SupportRequest) -> CaseResult:
+        with self.outbox.lock():
+            self._refresh()
+            if req.request_id and req.request_id in self._by_request_id:
+                return self._replay(req)
+            return self._handle(req)
+
+    def _replay(self, req: SupportRequest) -> CaseResult:
+        """Client idempotency key seen before: return the stored result, never re-execute."""
+        stored = self._by_request_id[req.request_id]
+        if _fingerprint(SupportRequest(**stored["input"])) != _fingerprint(req):
+            raise IdempotencyConflict(f"request_id {req.request_id!r} was already used with a different request")
+        result = CaseResult(**{k: v for k, v in stored.items() if k not in ("event", "logged_at")})
+        result.replayed = True
+        self.outbox.append("audit", {"event": "idempotent_replay", "request_id": req.request_id,
+                                     "case_id": result.case_id})
+        return result
+
+    def approve(self, approval_id: str, reviewer: str, note: str = ""):
+        with self.outbox.lock():
+            self._refresh()
+            return self.approvals.approve(approval_id, reviewer=reviewer, note=note)
+
+    def reject(self, approval_id: str, reviewer: str, note: str = ""):
+        with self.outbox.lock():
+            self._refresh()
+            return self.approvals.reject(approval_id, reviewer=reviewer, note=note)
+
+    def list_approvals(self, status=None):
+        with self.outbox.lock():
+            self._refresh()
+            return self.approvals.list(status)
+
+    def _handle(self, req: SupportRequest) -> CaseResult:
         case_id = _case_id()
         inp = req.model_dump()
 
@@ -79,6 +136,11 @@ class Agent:
 
     # ------------------------------------------------------------------ scan
     def scan(self) -> list[CaseResult]:
+        with self.outbox.lock():
+            self._refresh()
+            return self._scan()
+
+    def _scan(self) -> list[CaseResult]:
         results = []
         for f in scan_data(self.store):
             decision = decide(recommend_for_finding(f), f.verification, None)
@@ -142,7 +204,4 @@ class Agent:
 
 def build_agent(data_dir: Optional[Path] = None, outbox_dir: Optional[Path] = None,
                 llm: Optional[str] = None) -> Agent:
-    store = Store.load(data_dir or DATA_DIR, reference_now())
-    outbox = Outbox(outbox_dir or OUTBOX_DIR)
-    replay(store, outbox)
-    return Agent(store, outbox, make_classifier(llm), make_drafter(llm))
+    return Agent(data_dir or DATA_DIR, Outbox(outbox_dir or OUTBOX_DIR), make_classifier(llm), make_drafter(llm))

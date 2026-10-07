@@ -162,4 +162,4 @@ shipping issue; scan finds 4 seeded issues.
 ## 10. Out of scope / known limitations
 
 Real auth, real integrations (Stripe/Slack/Zendesk), persistence beyond JSONL, multi-turn conversation,
-refund windows and eligibility rules, per-submission idempotency keys, multi-order requests, rate limiting, UI beyond Swagger.
+refund windows and eligibility rules, multi-order requests, rate limiting, UI beyond Swagger.

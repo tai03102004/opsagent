@@ -94,20 +94,27 @@ Limits live in `policy.py` (`AUTO_REFUND_LIMIT = 50.00`, `MIN_CONFIDENCE = 0.7`)
 6. **Idempotency everywhere.** A duplicate-charge refund is keyed by payment (`refund:{order}:{payment}`),
    a partial refund by case (`refund:{order}:{case}`), and the executor re-checks the refundable balance
    at execution time, so an approval decided earlier can't over-refund. Tickets and Slack messages are
-   de-duplicated. Repeating a request or re-running `scan` never refunds twice or spams
-   channels. An approval executes exactly once.
-7. **Graceful degradation.** Without an API key the agent runs on rules and templates. If Claude
+   de-duplicated. Re-running `scan` never refunds twice or spams channels. An approval executes exactly once.
+7. **Client idempotency keys, like Stripe.** `POST /requests` accepts an `Idempotency-Key` header (CLI:
+   `--request-id`). Same key + same request → the stored result is returned (`replayed: true`) and nothing
+   runs again; same key + different request → `409`. Keys survive restarts (they are indexed from the audit log).
+8. **Concurrency: check-and-act is atomic across processes.** Two requests that both read "$18 refundable"
+   and both refund $10 would over-refund. Every operation therefore runs under one exclusive file lock on
+   the outbox and **re-reads state from the event log inside the lock**, so the CLI, the API and several
+   workers can run at once. Tested with two agents racing on two threads, and with two real CLI processes.
+   In production this is a database transaction with a row lock or a conditional `UPDATE ... WHERE refundable >= :amount`.
+9. **Graceful degradation.** Without an API key the agent runs on rules and templates. If Claude
    errors, that one request falls back. A permanent error such as an invalid key opens a circuit
    breaker, so the process stops calling the API.
-8. **Deterministic time.** A fixed reference clock (`OPSAGENT_NOW`) keeps rules like "shipped more than
+10. **Deterministic time.** A fixed reference clock (`OPSAGENT_NOW`) keeps rules like "shipped more than
    7 days ago" reproducible in tests.
-9. **The LLM's reply is checked too (fact guard).** Every amount and reference (`$34.00`, `R-0001`, `O123`)
+11. **The LLM's reply is checked too (fact guard).** Every amount and reference (`$34.00`, `R-0001`, `O123`)
    in a Claude-written reply must appear in the case file, excluding the customer's own message, so echoing
    "$1000" from the customer doesn't count as a fact. Any violation → the template reply is sent instead and
    the reason is recorded on the case (`reply_source`, `reply_fallback_reason`). A test also runs every
    scenario through the guard with our own templates: it caught a template that used a real customer's
    order ID as an example.
-10. **State = seed data + replayed events.** The outbox is an append-only log. The CLI and the API rebuild
+12. **State = seed data + replayed events.** The outbox is an append-only log. The CLI and the API rebuild
    the same state from it, and `/reset` restores the seed.
 
 ## How to run
@@ -116,7 +123,7 @@ Requirements: [uv](https://docs.astral.sh/uv/). It installs Python 3.12 and the 
 
 ```bash
 uv sync
-uv run pytest                      # 145 tests, offline, no API key needed
+uv run pytest                      # 161 tests, offline, no API key needed
 uv run opsagent eval               # 23 end-to-end scenarios → pass/fail table
 ```
 
@@ -125,6 +132,7 @@ CLI:
 ```bash
 uv run opsagent handle --email anna@example.com --message "I was charged twice for order O123!"
 uv run opsagent handle --email chloe@example.com --message "I want a refund for order O789."
+uv run opsagent handle --email ben@example.com --message "Refund \$5 for order O457" --request-id r-1   # run twice: 2nd is a replay
 uv run opsagent approvals list
 uv run opsagent approvals approve A-0001 --note "checked photo of broken kettle"
 uv run opsagent scan
@@ -139,7 +147,7 @@ uv run opsagent serve              # http://localhost:8000/docs
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /requests` | handle one request `{customer_email, message}` |
+| `POST /requests` | handle one request `{customer_email, message}`; optional `Idempotency-Key` header |
 | `POST /scan` | proactive scan of the data |
 | `GET /approvals?status=pending` | approval queue |
 | `POST /approvals/{id}/approve` · `/reject` | human decision `{reviewer, note}` |
@@ -169,7 +177,7 @@ and rules otherwise.
 
 | Layer | What | Cost |
 |---|---|---|
-| Unit tests | validation, rule classifier, detector, **policy**, executor idempotency, approvals, API | free, offline |
+| Unit tests | validation, rule classifier, detector, **policy**, executor idempotency, approvals, fact guard, idempotency keys, **concurrent refunds**, API | free, offline |
 | Scenario eval (`evals/scenarios.yaml`) | 23 end-to-end cases: happy paths, missing data, unknown customer, another customer's order, amount mismatch, already refunded, prompt injection, Vietnamese input, repeated request, scan | free, offline |
 | CI (`.github/workflows/ci.yml`) | lint + unit tests + offline scenario eval on every push, with the LLM forced off | free |
 | Live eval (`--live`, `-m live`) | the same scenarios with Claude doing the classification | a few cents to ~$0.5 |
@@ -196,11 +204,12 @@ duplicate). Details are in [`docs/spec.md`](docs/spec.md).
   scenario checks cover decisions and actions, not the wording of Claude-drafted replies (the fact guard checks their amounts and references).
 - Single turn: there is no conversation memory. A follow-up message with the missing order ID is a new request.
 - No refund windows or eligibility rules (reason, delivery date), multi-order requests or currency handling.
-- Partial refunds are idempotent per case, not per submission: if a customer sends the same "refund $5"
-  message twice, both are processed (the cumulative limit and refundable balance still apply). Production
-  fix: a client-supplied idempotency key per submission (like Stripe's `Idempotency-Key`).
+- Duplicate submissions are only de-duplicated when the client sends an `Idempotency-Key` (as with Stripe);
+  without one, two identical messages are two requests (the refundable balance and cumulative limit still apply).
 - The customer's email stands in for authentication.
-- JSONL plus in-process state, so a single process only. The API serialises requests with a lock.
+- Storage is JSONL with one global file lock (POSIX `fcntl`): correct for several processes on one machine,
+  but every write is serialised and state is re-read per operation. Fine for a demo; production needs a
+  database. On Windows the file lock is a no-op (single process only).
 - After an approval is decided, no follow-up email is sent to the customer.
 
 ## Production roadmap

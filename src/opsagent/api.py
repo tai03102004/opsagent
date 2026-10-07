@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -14,7 +14,7 @@ from .approvals import ApprovalError, ApprovalRecord
 from .classifier import FallbackClassifier, RuleClassifier
 from .config import model_name
 from .models import CaseResult, SupportRequest
-from .pipeline import Agent, build_agent
+from .pipeline import Agent, IdempotencyConflict, build_agent
 
 
 class ReviewBody(BaseModel):
@@ -62,9 +62,19 @@ def create_app(data_dir: Optional[Path] = None, outbox_dir: Optional[Path] = Non
                   "vietnamese": {"summary": "Vietnamese",
                                  "value": {"customer_email": "anna@example.com", "message": "Tôi bị trừ tiền 2 lần cho đơn hàng O123"}},
               }}}}})
-    def handle_request(req: SupportRequest) -> CaseResult:
+    def handle_request(
+        req: SupportRequest,
+        idempotency_key: Optional[str] = Header(
+            default=None, max_length=128,
+            description="Same key + same body returns the stored result instead of re-processing (like Stripe)."),
+    ) -> CaseResult:
+        if idempotency_key:
+            req = req.model_copy(update={"request_id": idempotency_key})
         with lock:
-            return agent().handle(req)
+            try:
+                return agent().handle(req)
+            except IdempotencyConflict as e:
+                raise HTTPException(409, str(e))
 
     @app.post("/scan", response_model=list[CaseResult], tags=["agent"])
     def scan() -> list[CaseResult]:
@@ -73,13 +83,12 @@ def create_app(data_dir: Optional[Path] = None, outbox_dir: Optional[Path] = Non
 
     @app.get("/approvals", response_model=list[ApprovalRecord], tags=["approvals"])
     def list_approvals(status: Optional[Literal["pending", "approved", "rejected"]] = None):
-        return agent().approvals.list(status)
+        return agent().list_approvals(status)
 
     def _review(approval_id: str, body: ReviewBody, approve: bool) -> ApprovalRecord:
         with lock:
-            q = agent().approvals
             try:
-                fn = q.approve if approve else q.reject
+                fn = agent().approve if approve else agent().reject
                 return fn(approval_id, reviewer=body.reviewer, note=body.note)
             except KeyError:
                 raise HTTPException(404, f"approval {approval_id} not found")
