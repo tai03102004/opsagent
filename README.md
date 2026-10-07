@@ -16,10 +16,6 @@ actions, and then either executes them, queues them for **human approval**, or *
   → executed:   R-0001, T-0001, M-0001, reply email E-0001
 ```
 
-**See it without running anything:** [docs/sample-results.md](docs/sample-results.md) has the real output of a
-full case (annotated JSON), every step of the [walkthrough](#try-it-yourself-5-minutes-no-api-key), and the
-test and eval results.
-
 ## Core idea: the LLM proposes, the code decides
 
 The LLM is used only for language: classifying intent, extracting entities, and drafting text.
@@ -201,8 +197,6 @@ In Swagger, open an endpoint → **Try it out** → paste the body → **Execute
 | 10 | `POST /requests` with header `idempotency-key: demo-1` | `{"customer_email": "ben@example.com", "message": "Please refund $5 for order O457."}` | `AUTO` refund `R-0003`; execute again → `replayed: true`, same `case_id`; same key with `$7` → `409` | Client idempotency key, like Stripe: a retried request never runs twice |
 | 11 | `GET /outbox/{stream}` | `stream` = `refunds` (also `tickets`, `slack`, `emails`) | exactly `R-0001`, `R-0002`, `R-0003` | The simulated external systems: no duplicate refunds |
 | 12 | `POST /scan` | — | `unshipped_order`, `delayed_shipment`, `failed_renewal` (right after a reset it also finds the O123 duplicate charge) | Proactive detection runs through the same policy |
-
-The real output of each step is in [docs/sample-results.md](docs/sample-results.md).
 
 Also useful: `GET /approvals?status=pending` (the approval queue), `POST /approvals/{id}/reject` (a rejected
 action never runs), and `GET /audit` (every decision with its reasons).
