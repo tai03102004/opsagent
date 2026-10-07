@@ -11,7 +11,7 @@ jobs:
       OPSAGENT_LLM: "off"  # CI never calls the LLM: tests and offline eval are deterministic and free
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Install
         run: uv sync --locked
       - name: Lint
