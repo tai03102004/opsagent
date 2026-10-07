@@ -152,3 +152,5 @@ class CaseResult(BaseModel):
     pending_approvals: list[str] = []
     summary: str = ""
     customer_reply: Optional[str] = None
+    reply_source: Optional[str] = None  # "claude" or "templates"
+    reply_fallback_reason: Optional[str] = None  # e.g. a fact-guard violation

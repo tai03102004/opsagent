@@ -99,7 +99,8 @@ class Agent:
         return self._audit(CaseResult(case_id=case_id, kind="request", tier=Tier.NEED_INFO,
                                       customer_id=customer.id if customer else None, input=inp, missing=missing,
                                       extraction=ex, decision=decision, executed=executed,
-                                      summary=draft.summary, customer_reply=draft.reply))
+                                      summary=draft.summary, customer_reply=draft.reply,
+            reply_source=draft.source, reply_fallback_reason=draft.fallback_reason))
 
     def _complete(self, case_id, kind, inp, customer: Optional[Customer], decision: Decision,
                   ex: Optional[Extraction], ver: Verification, finding: Optional[Finding] = None) -> CaseResult:
@@ -126,6 +127,7 @@ class Agent:
             case_id=case_id, kind=kind, tier=decision.tier, customer_id=customer.id if customer else None,
             input=inp, extraction=ex, verification=ver, decision=decision, executed=executed,
             pending_approvals=pending, summary=draft.summary, customer_reply=draft.reply,
+            reply_source=draft.source, reply_fallback_reason=draft.fallback_reason,
         ))
 
     def _send_reply(self, case_id: str, customer: Customer, body: str) -> dict:

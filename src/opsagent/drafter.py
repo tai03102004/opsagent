@@ -8,6 +8,7 @@ customer's language) but falls back to templates on any failure.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Literal, Optional, Protocol
 
 from pydantic import BaseModel
@@ -20,7 +21,7 @@ from .resilience import CircuitFallback
 SIGNATURE = "\n\n- Brewly Support"
 FIELD_LABELS = {
     "message": "a short description of the issue",
-    "order_id": "your order ID (for example O123)",
+    "order_id": "your order ID (the letter O followed by digits, from your confirmation email)",
     "refund_amount": "the exact amount you'd like refunded",
     "customer_email": "the email address registered on your Brewly account",
 }
@@ -47,6 +48,7 @@ class Draft(BaseModel):
     summary: str
     reply: Optional[str] = None
     source: Literal["claude", "templates"] = "templates"
+    fallback_reason: Optional[str] = None
 
 
 class Drafter(Protocol):
@@ -136,6 +138,41 @@ class TemplateDrafter:
         return hi + body + SIGNATURE
 
 
+# --------------------------------------------------------------------------- fact guard
+
+# Money as "$34.00" / "$ 34" or "34 USD" / "34,00 đô"; references as R-0001, T-0001, A-0001, O123, P1002, S1.
+MONEY_RE = re.compile(r"\$\s?(\d+(?:[.,]\d{1,2})?)|(\d+(?:[.,]\d{1,2})?)\s?(?:USD|usd|đô|dollars?)\b")
+REF_RE = re.compile(r"\b(?:[RTEMA]-\d{4}|O\d{3,}|P\d{4}|S\d+)\b")
+NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+class FactGuardError(RuntimeError):
+    pass
+
+
+def _facts(ctx: DraftContext) -> tuple[set[float], set[str]]:
+    """Every number and reference in the case file, EXCEPT the customer's own message.
+
+    Anything the customer wrote is a claim, not a fact: echoing "$1000" back must not pass.
+    """
+    blob = json.dumps(ctx.model_dump(mode="json", exclude={"customer_message"}), ensure_ascii=False)
+    return {float(n) for n in NUMBER_RE.findall(blob)}, set(REF_RE.findall(blob))
+
+
+def check_reply_facts(reply: str, ctx: DraftContext) -> list[str]:
+    """Deterministic check of an LLM-written reply: every amount and reference must come from the case file."""
+    amounts, refs = _facts(ctx)
+    violations = []
+    for m in MONEY_RE.finditer(reply or ""):
+        value = float((m.group(1) or m.group(2)).replace(",", "."))
+        if not any(abs(value - a) < 0.005 for a in amounts):
+            violations.append(f"amount ${value:.2f} is not in the case file")
+    for ref in REF_RE.findall(reply or ""):
+        if ref not in refs:
+            violations.append(f"reference {ref} is not in the case file")
+    return violations
+
+
 # --------------------------------------------------------------------------- Claude
 
 DRAFT_SYSTEM = """You write messages for Brewly customer support (a coffee brand). You receive a JSON case file describing what our system ALREADY decided and did. Produce:
@@ -176,6 +213,10 @@ class ClaudeDrafter:
             raise RuntimeError("empty summary")
         if ctx.kind == "request" and not (out.reply or "").strip():
             raise RuntimeError("empty customer reply")
+        if ctx.kind == "request":
+            violations = check_reply_facts(out.reply, ctx)
+            if violations:
+                raise FactGuardError("fact guard: " + "; ".join(violations))
         return Draft(summary=out.summary, reply=out.reply if ctx.kind == "request" else None, source="claude")
 
 
@@ -185,7 +226,12 @@ class FallbackDrafter:
         self.circuit = CircuitFallback("drafter")
 
     def draft(self, ctx: DraftContext) -> Draft:
-        return self.circuit.call(lambda: self.primary.draft(ctx), lambda _reason: self.fallback.draft(ctx))
+        def degrade(reason: str) -> Draft:
+            draft = self.fallback.draft(ctx)
+            draft.fallback_reason = reason
+            return draft
+
+        return self.circuit.call(lambda: self.primary.draft(ctx), degrade)
 
 
 def make_drafter(mode: Optional[str] = None) -> Drafter:

@@ -58,7 +58,7 @@ flowchart TD
 | `policy.py` | **guardrails**: per-action tier plus an overall tier with reasons | no |
 | `executor.py` | simulated side effects (refund, ticket, Slack, email, cancel), idempotent | no |
 | `approvals.py` | human-in-the-loop queue, persisted as events | no |
-| `drafter.py` | internal summary and customer reply (Claude or templates) | yes, optional |
+| `drafter.py` | internal summary and customer reply (Claude or templates) + fact guard | yes, optional |
 | `llm_json.py` | one structured Claude call; tolerant JSON parsing + schema validation | yes |
 | `pipeline.py` | wires the steps together and writes the audit trail | no |
 | `outbox.py` | append-only JSONL standing in for Zendesk, Slack, Stripe and email | no |
@@ -101,7 +101,13 @@ Limits live in `policy.py` (`AUTO_REFUND_LIMIT = 50.00`, `MIN_CONFIDENCE = 0.7`)
    breaker, so the process stops calling the API.
 8. **Deterministic time.** A fixed reference clock (`OPSAGENT_NOW`) keeps rules like "shipped more than
    7 days ago" reproducible in tests.
-9. **State = seed data + replayed events.** The outbox is an append-only log. The CLI and the API rebuild
+9. **The LLM's reply is checked too (fact guard).** Every amount and reference (`$34.00`, `R-0001`, `O123`)
+   in a Claude-written reply must appear in the case file, excluding the customer's own message, so echoing
+   "$1000" from the customer doesn't count as a fact. Any violation → the template reply is sent instead and
+   the reason is recorded on the case (`reply_source`, `reply_fallback_reason`). A test also runs every
+   scenario through the guard with our own templates: it caught a template that used a real customer's
+   order ID as an example.
+10. **State = seed data + replayed events.** The outbox is an append-only log. The CLI and the API rebuild
    the same state from it, and `/reset` restores the seed.
 
 ## How to run
@@ -187,7 +193,7 @@ duplicate). Details are in [`docs/spec.md`](docs/spec.md).
 - Live eval was run (2026-10-07) with `claude-haiku-4-5` through an Anthropic-compatible gateway that
   ignores `output_config.format`, which exercised the tolerant-parsing path: **23/23 scenarios passed**,
   including the partial-refund cases. It has not yet been run against the direct Anthropic API or Opus. The
-  scenario checks cover decisions and actions, not the wording of Claude-drafted replies.
+  scenario checks cover decisions and actions, not the wording of Claude-drafted replies (the fact guard checks their amounts and references).
 - Single turn: there is no conversation memory. A follow-up message with the missing order ID is a new request.
 - No refund windows or eligibility rules (reason, delivery date), multi-order requests or currency handling.
 - Partial refunds are idempotent per case, not per submission: if a customer sends the same "refund $5"
