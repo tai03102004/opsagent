@@ -53,6 +53,8 @@ def create_app(data_dir: Optional[Path] = None, outbox_dir: Optional[Path] = Non
                                 "value": {"customer_email": "anna@example.com", "message": "I was charged twice for order O123!"}},
                   "large_refund": {"summary": "Large refund (needs approval)",
                                    "value": {"customer_email": "chloe@example.com", "message": "I want a refund for order O789."}},
+                  "partial": {"summary": "Partial refund (try it with an idempotency key)",
+                              "value": {"customer_email": "ben@example.com", "message": "Please refund $5 for order O457."}},
                   "missing": {"summary": "Missing order id",
                               "value": {"customer_email": "ben@example.com", "message": "Please refund my order."}},
                   "not_owner": {"summary": "Someone else's order (blocked)",
