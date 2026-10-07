@@ -176,8 +176,10 @@ duplicate). Details are in [`docs/spec.md`](docs/spec.md).
 - Rule-based classification is keyword-driven: one intent per message, and confidence is a fixed 0.8
   or 0.3. It is a safety net, not a replacement for the LLM.
 - Template replies are English only. Claude replies in the customer's language when it is enabled.
-- **The live Claude path is verified against the SDK's request/response shapes (including a local fake
-  server), but it has not been benchmarked with a real key in this repo yet.** Run `opsagent eval --live`.
+- Live eval was run once (2026-10-07) with `claude-haiku-4-5` through an Anthropic-compatible gateway that
+  ignores `output_config.format`, which exercised the tolerant-parsing path: **20/20 scenarios passed**. It has
+  not yet been run against the direct Anthropic API or Opus. The scenario checks cover decisions and actions,
+  not the wording of Claude-drafted replies.
 - Single turn: there is no conversation memory. A follow-up message with the missing order ID is a new request.
 - No refund windows, partial refunds, multi-order requests or currency handling.
 - The customer's email stands in for authentication.
