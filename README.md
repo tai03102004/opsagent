@@ -1,5 +1,7 @@
 # Brewly Ops Agent: operations automation with guardrails
 
+[![CI](https://github.com/tai03102004/opsagent/actions/workflows/ci.yml/badge.svg)](https://github.com/tai03102004/opsagent/actions/workflows/ci.yml)
+
 AI Demo Challenge, **Option 3: Operations Automation Agent**.
 
 A small agent for a fictional DTC coffee brand ("Brewly"). It reads customer-support requests, or scans
@@ -163,6 +165,7 @@ and rules otherwise.
 |---|---|---|
 | Unit tests | validation, rule classifier, detector, **policy**, executor idempotency, approvals, API | free, offline |
 | Scenario eval (`evals/scenarios.yaml`) | 23 end-to-end cases: happy paths, missing data, unknown customer, another customer's order, amount mismatch, already refunded, prompt injection, Vietnamese input, repeated request, scan | free, offline |
+| CI (`.github/workflows/ci.yml`) | lint + unit tests + offline scenario eval on every push, with the LLM forced off | free |
 | Live eval (`--live`, `-m live`) | the same scenarios with Claude doing the classification | a few cents to ~$0.5 |
 
 The safety properties are tested deterministically and are independent of the model. The live eval
