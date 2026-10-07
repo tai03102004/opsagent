@@ -1,6 +1,7 @@
 """Deterministic verification: is the customer's claim true according to our data?
 
-Nothing here trusts the message or the LLM. Every amount comes from the store.
+Nothing here trusts the message or the LLM: a customer's claim is checked against our records,
+and a requested refund amount is accepted only if it is within what is still refundable.
 """
 
 from __future__ import annotations
@@ -83,19 +84,27 @@ def verify(ex: Extraction, customer: Customer, store: Store) -> Verification:
         )
 
     if ex.intent == Intent.REFUND_REQUEST:
-        if order.status == "refunded":
-            return _block("already_refunded", order.id, [f"order {order.id} already refunded"])
-        if ex.claimed_amount is not None and ex.claimed_amount > order.total:
+        paid, refunded = store.paid_total(order.id), store.refunded_total(order.id)
+        remaining = store.refundable(order.id)
+        if order.status == "refunded" or remaining <= 0:
+            return _block("already_refunded", order.id, [f"order {order.id} already fully refunded"])
+        if ex.claimed_amount is not None and ex.claimed_amount > remaining:
             return _block(
                 "amount_mismatch",
                 order.id,
-                [f"claimed {_money(ex.claimed_amount)} but order total is {_money(order.total)}"],
+                [f"claimed {_money(ex.claimed_amount)} but only {_money(remaining)} is refundable "
+                 f"(paid {_money(paid)}, already refunded {_money(refunded)})"],
             )
+        # The customer may ask for less than what is left; never more (checked above).
+        amount = ex.claimed_amount if ex.claimed_amount is not None else remaining
+        kind = "full" if amount == remaining else "partial"
         return Verification(
             confirmed=True,
             order_id=order.id,
-            amount=order.total,
-            evidence=[f"order {order.id} {order.status}, total {_money(order.total)}"],
+            amount=amount,
+            refunded_so_far=refunded,
+            evidence=[f"order {order.id} paid {_money(paid)}, already refunded {_money(refunded)}, "
+                      f"refund {_money(amount)} ({kind})"],
         )
 
     if ex.intent == Intent.SHIPPING_ISSUE:

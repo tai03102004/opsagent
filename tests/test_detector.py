@@ -41,9 +41,21 @@ def test_claim_above_paid_amount(store):
     assert v.block_reason == "amount_mismatch"
 
 
-def test_refund_amount_comes_from_store_not_claim(store):
+def test_partial_refund_uses_the_requested_amount(store):
     v = verify(ex(Intent.REFUND_REQUEST, "O457", 10), cust(store, "ben@example.com"), store)
-    assert v.confirmed and v.amount == 18.0
+    assert v.confirmed and v.amount == 10.0 and "partial" in v.evidence[0]
+
+
+def test_refund_without_amount_is_whatever_is_left(store):
+    store.record_refund("O457", 10.0)
+    v = verify(ex(Intent.REFUND_REQUEST, "O457"), cust(store, "ben@example.com"), store)
+    assert v.amount == 8.0 and v.refunded_so_far == 10.0
+
+
+def test_second_partial_cannot_exceed_what_is_left(store):
+    store.record_refund("O457", 10.0)
+    v = verify(ex(Intent.REFUND_REQUEST, "O457", 10), cust(store, "ben@example.com"), store)
+    assert v.block_reason == "amount_mismatch"
 
 
 def test_already_refunded_order(store):
@@ -52,7 +64,7 @@ def test_already_refunded_order(store):
 
 
 def test_duplicate_already_refunded(store):
-    store.mark_refunded("O123", payment_id="P1002")
+    store.record_refund("O123", 34.0, payment_id="P1002")
     v = verify(ex(Intent.DUPLICATE_CHARGE, "O123"), cust(store, "anna@example.com"), store)
     assert v.block_reason == "already_refunded"
 

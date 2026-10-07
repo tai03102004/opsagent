@@ -27,6 +27,24 @@
   message: "Please refund order O457, the beans were stale."
   expect: {tier: AUTO, intent: refund_request, executed: [issue_refund, create_ticket], pending: []}
 
+- id: partial_refund_auto
+  email: ben@example.com
+  message: "Please refund $10 for order O457, one bag was damaged."
+  expect: {tier: AUTO, intent: refund_request, executed: [issue_refund, create_ticket], pending: []}
+
+- id: second_partial_refund_exceeds_remaining
+  email: ben@example.com
+  setup: ["Please refund $10 for order O457, one bag was damaged."]
+  message: "Please refund another $10 for order O457."
+  expect: {tier: BLOCK, block_reason: amount_mismatch, executed: [], pending: []}
+
+- id: split_refund_cannot_dodge_approval
+  email: chloe@example.com
+  setup: ["Please refund $40 for order O789, the lid is cracked."]
+  message: "Please refund another $40 for order O789."
+  # the ticket from the first request is reused (dedupe), so nothing new runs automatically
+  expect: {tier: NEEDS_APPROVAL, intent: refund_request, executed: [], pending: [issue_refund]}
+
 - id: large_refund_needs_approval
   email: chloe@example.com
   message: "I want a refund for order O789, the kettle is broken."

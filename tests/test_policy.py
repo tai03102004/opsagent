@@ -29,6 +29,12 @@ def test_refund_threshold(amount, tier):
     assert d.tier == tier and d.actions[0].reasons
 
 
+def test_refunds_are_capped_cumulatively_per_order():
+    already = Verification(confirmed=True, order_id="O1", amount=30, refunded_so_far=30)
+    d = decide([refund(30)], already, ex())
+    assert d.tier == Tier.NEEDS_APPROVAL  # 30 + 30 > 50: splitting a refund can't dodge approval
+
+
 def test_unverified_refund_is_blocked():
     d = decide([refund(10)], Verification(confirmed=False), ex())
     assert d.tier == Tier.BLOCK

@@ -30,14 +30,20 @@ class Executor:
 
     # ----------------------------------------------------------------- handlers
     def _refund(self, p: dict, case_id: str) -> Record:
-        key = f"refund:{p['order_id']}:{p.get('payment_id') or 'order'}"
+        # A payment can be refunded once; an order can get several partial refunds, one per case.
+        key = (f"refund:{p['order_id']}:{p['payment_id']}" if p.get("payment_id")
+               else f"refund:{p['order_id']}:{case_id}")
         existing = next((r for r in self.outbox.read("refunds") if r["idempotency_key"] == key), None)
         if existing:
             return {"id": existing["id"], "status": "duplicate_ignored", "idempotency_key": key}
+        # Re-check at execution time: an approval may run long after the decision was made.
+        if not p.get("payment_id") and p["amount"] > self.store.refundable(p["order_id"]):
+            return {"id": None, "status": "rejected_exceeds_refundable", "idempotency_key": key,
+                    "refundable": self.store.refundable(p["order_id"])}
         rec = {"id": self.outbox.next_id("refunds", "R"), "status": "done", "case_id": case_id,
                "idempotency_key": key, **p}
         self.outbox.append("refunds", rec)
-        self.store.mark_refunded(p["order_id"], p.get("payment_id"))
+        self.store.record_refund(p["order_id"], p["amount"], p.get("payment_id"))
         return rec
 
     def _ticket(self, p: dict, case_id: str) -> Record:
@@ -83,6 +89,6 @@ class Executor:
 def replay(store: Store, outbox: Outbox) -> None:
     """Re-apply persisted side effects to a freshly loaded store."""
     for r in outbox.read("refunds"):
-        store.mark_refunded(r["order_id"], r.get("payment_id"))
+        store.record_refund(r["order_id"], r["amount"], r.get("payment_id"))
     for r in outbox.read("subscriptions"):
         store.mark_subscription_cancelled(r["subscription_id"])

@@ -22,8 +22,8 @@ deciding whether an action may run without a human.
 
 Why:
 - **Testable.** The guardrails are pure functions. They have unit tests that run offline in under a second.
-- **Safe against prompt injection.** The model cannot take actions, and money amounts come from our
-  records, never from the message or the model.
+- **Safe against prompt injection.** The model cannot take actions. A refund amount the customer asks for
+  is accepted only if it fits within what our records say is still refundable.
 - **Explainable.** Every decision carries human-readable reasons and is written to an audit log.
 
 ## Architecture
@@ -77,17 +77,22 @@ Limits live in `policy.py` (`AUTO_REFUND_LIMIT = 50.00`, `MIN_CONFIDENCE = 0.7`)
 1. **A workflow, not an autonomous agent.** The steps are fixed and known in advance, so a deterministic
    pipeline with two narrow LLM calls is cheaper, faster and easier to test than letting a model loop
    over tools. Where to go next is in [Production roadmap](#production-roadmap).
-2. **Never trust the claim; verify against data.** "Charged twice" is checked against payments. Refund
-   amounts come from the order record. A claim of "$500" on a $45 order is blocked, not negotiated.
-3. **Don't let the LLM hallucinate identifiers.** If Claude returns an order ID that does not appear in
-   the message text, it is dropped and the customer is asked for it.
+2. **Never trust the claim; verify against data.** "Charged twice" is checked against payments. A refund
+   request is checked against what was paid minus what was already refunded: asking for less (a partial
+   refund) is fine, asking for more is blocked, not negotiated. The $50 auto limit applies to the
+   **cumulative** amount refunded on an order, so a large refund can't be split into small automatic ones.
+3. **Don't let the LLM hallucinate identifiers or amounts.** If Claude returns an order ID or an amount
+   that does not appear in the message text, it is dropped and the customer is asked for it. When the
+   rules fallback sees several amounts ("it cost $18, refund $5"), it does not pick one; it asks.
 4. **Treat customer text as data.** It is fenced in `<customer_message>` tags and the model is told never
    to follow instructions inside it. A regex heuristic plus the model's own flag send suspicious
    messages to a human. Even if both miss, the model has no way to trigger an action.
 5. **Don't leak other customers' data.** A request about someone else's order gets the same reply as a
    non-existent order.
-6. **Idempotency everywhere.** Refunds are keyed `refund:{order}:{payment}`, and tickets and Slack
-   messages are de-duplicated. Repeating a request or re-running `scan` never refunds twice or spams
+6. **Idempotency everywhere.** A duplicate-charge refund is keyed by payment (`refund:{order}:{payment}`),
+   a partial refund by case (`refund:{order}:{case}`), and the executor re-checks the refundable balance
+   at execution time, so an approval decided earlier can't over-refund. Tickets and Slack messages are
+   de-duplicated. Repeating a request or re-running `scan` never refunds twice or spams
    channels. An approval executes exactly once.
 7. **Graceful degradation.** Without an API key the agent runs on rules and templates. If Claude
    errors, that one request falls back. A permanent error such as an invalid key opens a circuit
@@ -103,8 +108,8 @@ Requirements: [uv](https://docs.astral.sh/uv/). It installs Python 3.12 and the 
 
 ```bash
 uv sync
-uv run pytest                      # 131 tests, offline, no API key needed
-uv run opsagent eval               # 20 end-to-end scenarios → pass/fail table
+uv run pytest                      # 145 tests, offline, no API key needed
+uv run opsagent eval               # 23 end-to-end scenarios → pass/fail table
 ```
 
 CLI:
@@ -139,7 +144,7 @@ uv run opsagent serve              # http://localhost:8000/docs
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPSAGENT_MODEL=claude-opus-5-5   # default; claude-haiku-4-5 is ~10x cheaper for this task
 uv run opsagent check-llm               # one call: key, base URL, served model, structured output
-uv run opsagent eval --live             # same 20 scenarios through Claude, no fallback (~$0.5 on Opus)
+uv run opsagent eval --live             # same scenarios through Claude, no fallback (~$0.5 on Opus)
 uv run pytest -m live
 ```
 
@@ -157,7 +162,7 @@ and rules otherwise.
 | Layer | What | Cost |
 |---|---|---|
 | Unit tests | validation, rule classifier, detector, **policy**, executor idempotency, approvals, API | free, offline |
-| Scenario eval (`evals/scenarios.yaml`) | 20 end-to-end cases: happy paths, missing data, unknown customer, another customer's order, amount mismatch, already refunded, prompt injection, Vietnamese input, repeated request, scan | free, offline |
+| Scenario eval (`evals/scenarios.yaml`) | 23 end-to-end cases: happy paths, missing data, unknown customer, another customer's order, amount mismatch, already refunded, prompt injection, Vietnamese input, repeated request, scan | free, offline |
 | Live eval (`--live`, `-m live`) | the same scenarios with Claude doing the classification | a few cents to ~$0.5 |
 
 The safety properties are tested deterministically and are independent of the model. The live eval
@@ -176,12 +181,15 @@ duplicate). Details are in [`docs/spec.md`](docs/spec.md).
 - Rule-based classification is keyword-driven: one intent per message, and confidence is a fixed 0.8
   or 0.3. It is a safety net, not a replacement for the LLM.
 - Template replies are English only. Claude replies in the customer's language when it is enabled.
-- Live eval was run once (2026-10-07) with `claude-haiku-4-5` through an Anthropic-compatible gateway that
-  ignores `output_config.format`, which exercised the tolerant-parsing path: **20/20 scenarios passed**. It has
-  not yet been run against the direct Anthropic API or Opus. The scenario checks cover decisions and actions,
-  not the wording of Claude-drafted replies.
+- Live eval was run (2026-10-07) with `claude-haiku-4-5` through an Anthropic-compatible gateway that
+  ignores `output_config.format`, which exercised the tolerant-parsing path: **23/23 scenarios passed**,
+  including the partial-refund cases. It has not yet been run against the direct Anthropic API or Opus. The
+  scenario checks cover decisions and actions, not the wording of Claude-drafted replies.
 - Single turn: there is no conversation memory. A follow-up message with the missing order ID is a new request.
-- No refund windows, partial refunds, multi-order requests or currency handling.
+- No refund windows or eligibility rules (reason, delivery date), multi-order requests or currency handling.
+- Partial refunds are idempotent per case, not per submission: if a customer sends the same "refund $5"
+  message twice, both are processed (the cumulative limit and refundable balance still apply). Production
+  fix: a client-supplied idempotency key per submission (like Stripe's `Idempotency-Key`).
 - The customer's email stands in for authentication.
 - JSONL plus in-process state, so a single process only. The API serialises requests with a lock.
 - After an approval is decided, no follow-up email is sent to the customer.

@@ -85,7 +85,7 @@ same policy. It also ignores a decoy: a failed payment followed by a successful 
 
 **[làm]** Terminal: `uv run pytest -q` then `uv run opsagent eval`.
 
-"131 tests and 20 end-to-end scenarios, all offline, with no API key and zero tokens: missing data, wrong
+"145 tests and 23 end-to-end scenarios, all offline, with no API key and zero tokens: missing data, wrong
 customer, amount mismatch, injection, Vietnamese, repeated requests. The safety properties don't depend on
 the model, so they're tested deterministically. Model quality is a separate, opt-in live eval:
 `eval --live`.

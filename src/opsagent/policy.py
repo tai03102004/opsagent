@@ -45,10 +45,12 @@ def _action_tier(a: Action, v: Optional[Verification]) -> tuple[Tier, str]:
     if a.type == ActionType.ISSUE_REFUND:
         amount = float(a.params.get("amount") or 0)
         if not (v and v.confirmed) or amount <= 0:
-            return Tier.BLOCK, "refund requires a verified issue and a positive amount from our records"
-        if amount <= AUTO_REFUND_LIMIT:
-            return Tier.AUTO, f"verified refund ${amount:.2f} <= ${AUTO_REFUND_LIMIT:.2f} auto limit"
-        return Tier.NEEDS_APPROVAL, f"refund ${amount:.2f} > ${AUTO_REFUND_LIMIT:.2f} auto limit"
+            return Tier.BLOCK, "refund requires a verified issue and a positive amount"
+        # Cumulative per order, so a $120 refund can't be split into three automatic $40 ones.
+        total = amount + (v.refunded_so_far or 0.0)
+        if total <= AUTO_REFUND_LIMIT:
+            return Tier.AUTO, f"verified refund ${amount:.2f}; order total refunded ${total:.2f} <= ${AUTO_REFUND_LIMIT:.2f} auto limit"
+        return Tier.NEEDS_APPROVAL, f"order total refunded would be ${total:.2f} > ${AUTO_REFUND_LIMIT:.2f} auto limit"
     if a.type == ActionType.CANCEL_SUBSCRIPTION:
         return Tier.NEEDS_APPROVAL, "subscription cancellation is hard to reverse (retention review)"
     if a.type == ActionType.ESCALATE_HUMAN:

@@ -21,6 +21,7 @@ from .models import (
     Decision,
     Extraction,
     Finding,
+    Intent,
     SupportRequest,
     Tier,
     Verification,
@@ -67,6 +68,8 @@ class Agent:
         # 4. never guess missing identifiers
         if ex.intent in REQUIRES_ORDER_ID and not ex.order_id:
             return self._need_info(case_id, inp, customer, ["order_id"], [], ex)
+        if ex.intent == Intent.REFUND_REQUEST and ex.amount_ambiguous:
+            return self._need_info(case_id, inp, customer, ["refund_amount"], [], ex)
 
         # 5-7. verify -> recommend -> policy (no LLM)
         ver = verify(ex, customer, self.store)

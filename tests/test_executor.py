@@ -32,6 +32,21 @@ def test_refund_is_idempotent(ex, store):
     assert store.payment("P1002").status == "refunded"
 
 
+def test_partial_refunds_on_one_order_in_separate_cases(ex, store):
+    a = ex.execute(refund("O457", None, 10.0), "case-1")
+    b = ex.execute(refund("O457", None, 5.0), "case-2")
+    again = ex.execute(refund("O457", None, 10.0), "case-1")
+    assert a["status"] == b["status"] == "done" and again["status"] == "duplicate_ignored"
+    assert store.refundable("O457") == 3.0
+
+
+def test_refund_is_rechecked_at_execution_time(ex):
+    ex.execute(refund("O457", None, 10.0), "case-1")
+    late = ex.execute(refund("O457", None, 18.0), "case-2")  # e.g. an approval decided earlier
+    assert late["status"] == "rejected_exceeds_refundable"
+    assert len(ex.outbox.read("refunds")) == 1
+
+
 def test_ticket_dedupe(ex):
     a = ex.execute(ticket("same"), "c1")
     b = ex.execute(ticket("same"), "c2")

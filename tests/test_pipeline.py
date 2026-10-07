@@ -40,6 +40,12 @@ def test_missing_order_id_asks_for_it(agent):
     assert types(r.executed) == ["reply_customer"]
 
 
+def test_ambiguous_amount_asks_the_customer(agent):
+    r = agent.handle(req("ben@example.com", "Order O457 cost me $18, please refund $5 of it"))
+    assert r.tier == Tier.NEED_INFO and r.missing == ["refund_amount"]
+    assert agent.outbox.read("refunds") == []
+
+
 def test_large_refund_goes_to_approval(agent):
     r = agent.handle(req("chloe@example.com", "I want a refund for order O789."))
     assert r.tier == Tier.NEEDS_APPROVAL

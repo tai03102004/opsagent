@@ -21,6 +21,7 @@ SIGNATURE = "\n\n- Brewly Support"
 FIELD_LABELS = {
     "message": "a short description of the issue",
     "order_id": "your order ID (for example O123)",
+    "refund_amount": "the exact amount you'd like refunded",
     "customer_email": "the email address registered on your Brewly account",
 }
 

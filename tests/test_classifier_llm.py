@@ -52,6 +52,18 @@ def test_hallucinated_order_id_is_dropped():
     assert ex.order_id is None
 
 
+def test_amount_not_in_text_is_dropped_and_flagged():
+    ex = ClaudeClassifier(client=fake_client(parsed=llm(intent=Intent.REFUND_REQUEST, claimed_amount=15.0)),
+                          model="m").classify("refund ten dollars for O457")
+    assert ex.claimed_amount is None and ex.amount_ambiguous
+
+
+def test_claude_may_pick_one_of_several_amounts_in_text():
+    ex = ClaudeClassifier(client=fake_client(parsed=llm(intent=Intent.REFUND_REQUEST, claimed_amount=5.0)),
+                          model="m").classify("O457 cost $18, please refund $5")
+    assert ex.claimed_amount == 5.0 and not ex.amount_ambiguous
+
+
 def test_confidence_is_clamped():
     ex = ClaudeClassifier(client=fake_client(parsed=llm(confidence=7)), model="m").classify("O123 twice")
     assert ex.confidence == 1.0

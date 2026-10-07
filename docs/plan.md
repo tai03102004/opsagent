@@ -21,7 +21,7 @@ PyYAML, pytest.
 - Reference clock `2026-10-06T12:00:00+00:00`, override `OPSAGENT_NOW`.
 - Model env `OPSAGENT_MODEL`, default `claude-opus-5-5`. `OPSAGENT_LLM=off` forces rules/templates.
 - Tests never call the network (`OPSAGENT_LLM=off` in `conftest.py`); live tests marked `live`, excluded by default.
-- Money amounts come from the store only. Order IDs from the LLM are kept only if they appear in the message text.
+- Refund amounts never exceed the store's refundable balance. Order IDs and amounts from the LLM are kept only if they appear in the message text.
 - Customer replies never reveal whether another customer's order exists (`not_owner` reads like `order_not_found`).
 
 ## File Structure

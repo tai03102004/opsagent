@@ -24,6 +24,14 @@ class Store:
         self._orders = {o.id: o for o in orders}
         self._payments = {p.id: p for p in payments}
         self._subscriptions = {s.id: s for s in subscriptions}
+        # Refunded amount per order. Seed: a "refunded" order is fully refunded; otherwise sum refunded payments.
+        self._refunded: dict[str, float] = {}
+        for o in orders:
+            pays = [p for p in payments if p.order_id == o.id]
+            if o.status == "refunded":
+                self._refunded[o.id] = sum(p.amount for p in pays if p.status in ("succeeded", "refunded"))
+            else:
+                self._refunded[o.id] = sum(p.amount for p in pays if p.status == "refunded")
 
     @classmethod
     def load(cls, data_dir: Path, now: datetime) -> "Store":
@@ -74,11 +82,22 @@ class Store:
     def subscriptions_for(self, customer_id: str) -> list[Subscription]:
         return [s for s in self._subscriptions.values() if s.customer_id == customer_id]
 
+    def paid_total(self, order_id: str) -> float:
+        """Money actually captured for the order (a payment refunded later was still captured)."""
+        return round(sum(p.amount for p in self.payments_for(order_id) if p.status in ("succeeded", "refunded")), 2)
+
+    def refunded_total(self, order_id: str) -> float:
+        return round(self._refunded.get(order_id, 0.0), 2)
+
+    def refundable(self, order_id: str) -> float:
+        return round(self.paid_total(order_id) - self.refunded_total(order_id), 2)
+
     # ------------------------------------------------------------ writes (executor only)
-    def mark_refunded(self, order_id: str, payment_id: Optional[str] = None) -> None:
+    def record_refund(self, order_id: str, amount: float, payment_id: Optional[str] = None) -> None:
         if payment_id:
             self._payments[payment_id].status = "refunded"
-        else:
+        self._refunded[order_id] = round(self.refunded_total(order_id) + amount, 2)
+        if self.refundable(order_id) <= 0:
             self._orders[order_id].status = "refunded"
 
     def mark_subscription_cancelled(self, subscription_id: str) -> None:

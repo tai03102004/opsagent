@@ -19,12 +19,24 @@ def test_payments_for_order(store):
     assert [p.id for p in store.payments_for("O123")] == ["P1001", "P1002"]
 
 
-def test_mark_refunded_payment_and_order(store):
-    store.mark_refunded("O123", payment_id="P1002")
+def test_refund_totals_from_seed(store):
+    assert store.paid_total("O123") == 68.0  # duplicate charge: two captured payments
+    assert store.refundable("O457") == 18.0
+    assert store.refundable("O321") == 0.0  # seeded as already refunded
+
+
+def test_record_refund_of_a_duplicate_payment(store):
+    store.record_refund("O123", 34.0, payment_id="P1002")
     assert store.payment("P1002").status == "refunded"
-    assert store.order("O123").status == "shipped"
-    store.mark_refunded("O457")
-    assert store.order("O457").status == "refunded"
+    assert store.order("O123").status == "shipped"  # the real purchase still stands
+    assert store.refundable("O123") == 34.0
+
+
+def test_partial_then_full_refund(store):
+    store.record_refund("O457", 10.0)
+    assert store.order("O457").status == "delivered" and store.refundable("O457") == 8.0
+    store.record_refund("O457", 8.0)
+    assert store.order("O457").status == "refunded" and store.refundable("O457") == 0.0
 
 
 def test_mark_subscription_cancelled(store):

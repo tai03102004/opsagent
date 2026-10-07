@@ -22,7 +22,7 @@ choosing whether an action may run) is deterministic Python that can be unit-tes
 
 Consequences:
 - Safety properties are tested deterministically, offline, for free.
-- Money amounts always come from the data store, never from the message or the LLM.
+- A refund amount is accepted only within what the store says is still refundable (paid − already refunded); a requested amount that is larger is blocked.
 - Customer text is treated as data; it cannot change policy.
 
 ## 3. Fictional domain: "Brewly"
@@ -124,7 +124,7 @@ Intent → verification → actions:
 | order_status | order exists & owned | reply |
 | duplicate_charge | duplicate payments found | refund(dup amount) + ticket + slack #billing + reply |
 | duplicate_charge | not found | ticket (investigate) + reply |
-| refund_request | order owned, not refunded, claim ≤ paid | refund(order total from DB) + ticket + reply |
+| refund_request | order owned, refundable > 0, claim ≤ refundable | refund(claim, or the full refundable balance) + ticket + reply |
 | cancel_subscription | active subscription exists | cancel_subscription + reply |
 | shipping_issue | shipped > 7 days, not delivered | ticket + slack #fulfillment + reply |
 | unknown | — | escalate_human + reply |
@@ -162,4 +162,4 @@ shipping issue; scan finds 4 seeded issues.
 ## 10. Out of scope / known limitations
 
 Real auth, real integrations (Stripe/Slack/Zendesk), persistence beyond JSONL, multi-turn conversation,
-refund windows and partial refunds, multi-order requests, rate limiting, UI beyond Swagger.
+refund windows and eligibility rules, per-submission idempotency keys, multi-order requests, rate limiting, UI beyond Swagger.

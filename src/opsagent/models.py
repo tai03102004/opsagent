@@ -85,6 +85,7 @@ class Extraction(BaseModel):
     claimed_amount: Optional[float] = None
     confidence: float = Field(ge=0.0, le=1.0)
     injection_suspected: bool = False
+    amount_ambiguous: bool = False  # several amounts in the text, or an LLM amount we couldn't find in it
     source: Literal["claude", "rules"] = "rules"
     fallback_reason: Optional[str] = None
 
@@ -96,7 +97,8 @@ class Verification(BaseModel):
     order_id: Optional[str] = None
     payment_id: Optional[str] = None
     subscription_id: Optional[str] = None
-    amount: Optional[float] = None  # always taken from the store, never from the customer
+    amount: Optional[float] = None  # never more than what our records say is still refundable
+    refunded_so_far: float = 0.0  # already refunded on this order (policy caps the cumulative total)
 
 
 class ActionType(str, Enum):

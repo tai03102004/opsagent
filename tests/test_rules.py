@@ -32,6 +32,11 @@ def test_claimed_amount_extracted():
     assert RuleClassifier().classify("Refund order O456").claimed_amount is None
 
 
+def test_several_amounts_are_ambiguous_not_guessed():
+    ex = RuleClassifier().classify("Order O457 cost me $18, please refund $5 of it")
+    assert ex.claimed_amount is None and ex.amount_ambiguous
+
+
 def test_unknown_has_low_confidence_known_has_high():
     assert RuleClassifier().classify("hello there").confidence < 0.7
     assert RuleClassifier().classify("refund O457").confidence >= 0.7
